@@ -382,7 +382,21 @@ interfacemgr_sync_time(ifinstance_t * iface1,
         }
     }
 }
-
+// void
+// ww_dump_bytes (uint8_t *s, int n)
+// {
+//  uint8_t *p = s;
+//  printf("******************************\n");
+//  printf("LEN: %d\n", n);
+//  printf ("[");
+//  while ((p - s) < n)
+//    {
+//      printf ("0x%02x ", *p);
+//      p++;
+//    }
+//  printf ("]\n");
+//  printf("******************************\n");
+// }
 void
 interfacemgr_process_packet(ifinstance_t * iface, const unsigned char *data,
                             int len, struct timeval timestamp)
@@ -419,6 +433,8 @@ interfacemgr_process_packet(ifinstance_t * iface, const unsigned char *data,
     }
 
     if(!packet_was_already_received) {
+        // printf("RECEIBVEDLKSDJFLSKD\n");
+        // ww_dump_bytes((uint8_t*)data, len);
         sniffer_parser_parse_data(data, len,
                                   interfacemgr_get_absolute_timestamp(iface,
                                                                       timestamp));
