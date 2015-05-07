@@ -46,10 +46,12 @@
 #endif
 
 #define CRYPTO_DEBUG 0
+#define DEBUG 1
 
 static const char *interface_name = "pcap";
+static int encryption_key_read = 0;
 
-static uint8_t crypto_key[16] = {0x64, 0x4a, 0x68, 0xa1, 0xf1, 0x2c, 0x75, 0xf2, 0x02, 0xd7, 0x75, 0xa4, 0x70, 0xf2, 0xf8, 0x32};
+static uint8_t crypto_key[16] = {0x1a, 0xdf, 0x26, 0x3e, 0xc8, 0x7c, 0x6a, 0xb1, 0x39, 0x4b, 0x3f, 0x68, 0x0a, 0x43, 0x93, 0x6c};
 
 typedef struct {
     FILE *pf;
@@ -178,7 +180,9 @@ for (i = 0; i < outlen; ++i) {
 
   if(dir) {
     if(inlen % 16 != 0) {
+#if DEBUG
       printf("\n**********DROPPING THE PACKET NOT THE MULTIPLE OF 16****************\n");
+#endif /* DEBUG */
       return 0;
     }
   }
@@ -535,6 +539,7 @@ interface_thread_process_input(void *data)
 }
 
 /*---------------------------------------------------------------------------*/
+#if DEBUG
 void
 ww_dump_bytes (uint8_t *s, int n)
 {
@@ -550,6 +555,8 @@ ww_dump_bytes (uint8_t *s, int n)
  printf ("]\n");
  //printf("******************************\n");
 }
+#endif
+
 void
 linkaddr_copy(linkaddr_t *dest, const linkaddr_t *src)
 {
@@ -717,7 +724,9 @@ parse802154_decrypt(uint8_t *packet, int len)
   static uint8_t *mactoaes;
 
   hdr_len = frame802154_parse(packet, len, &frame);
+#if DEBUG
   printf("Header Len: %d\n", hdr_len);
+#endif
 
   if(hdr_len) {
 #if  NODE_6LBR_FRAME802154_SECURITY_ENABLE
@@ -744,28 +753,35 @@ parse802154_decrypt(uint8_t *packet, int len)
           return -1;
       } else {
         /* Not our packet */
+#if DEBUG
         printf("Not a WigWag packet.. dropping\n");
+#endif
         return -1;
       }
 
       int i = 0;
 
       //printf("*************************************************************\n");
+#if DEBUG
       printf("ENCRYTPTED len - %d : ", frame.payload_len);
       for (i = 0; i < frame.payload_len; ++i)
       {
         printf("%x,",buffer[i]);
       }
       printf("\n");
+#endif
 
 
       frame.payload_len = aes_enc_dec(buffer, frame.payload_len, crypto_key, 1, buffer);        /* state = 0 - encryption, 1 - decryption */
       if(frame.payload_len <= 0) {
+#if DEBUG
         printf("Decryption failed\n");
+#endif
         return -1;
       }
       /* Remove the encryption bytes */
       packet[0] &= 0xF7;
+#if DEBUG
       printf("UNENCRYPTED len - %d : ", frame.payload_len);
       for (i = 0; i < frame.payload_len; ++i)
       {
@@ -773,10 +789,13 @@ parse802154_decrypt(uint8_t *packet, int len)
         packet[i + hdr_len - 6] = buffer[i];
       }
       printf("\n");
+#endif
 
     } else {
       //printf("*************************************************************\n");
+#if DEBUG
       printf("UNENCRYPTED MESSAGE\n");
+#endif
       //printf("*************************************************************\n");
     }
 #endif /*  NODE_6LBR_FRAME802154_SECURITY_ENABLE */ 
@@ -794,6 +813,47 @@ interface_packet_handler(u_char * param, const struct pcap_pkthdr *header, const
     //printf("Etherenet: %d, FCS: %d\n", descriptor->ethernet, descriptor->fcs);
     const u_char *pkt_data_802_15_4 = descriptor->ethernet ? pkt_data + 14 : pkt_data;
 
+    if(!encryption_key_read) {
+    	FILE *fp;
+    	char buffer[100];
+    	int inx = 0;
+	char filename[100] = "/home/wigwag/workspace/ww-foren6/capture/ww-key.txt";
+	fp = fopen(filename, "r");
+    	if(fp == NULL) {
+		fprintf(stderr, "Could not open the ww-key file - %s.. error - %s\n",filename, strerror(errno));
+		exit(0);
+	}
+	char *start_ptr, *space_ptr;
+        char temp[3], *ptr;
+	if(fgets(buffer, 100, fp) != NULL) {
+		//parse the key
+		fprintf(stdout, "WigWag Key - %s\n", buffer);	
+		fprintf(stdout, "Reading: ");
+		start_ptr = buffer;
+		while(start_ptr != NULL) {
+         	   space_ptr = strchr(start_ptr, ' ');
+	            if(space_ptr != NULL) {
+        	            *space_ptr++ = '\0';
+            	    } else {
+            		space_ptr = strchr(start_ptr, '\n');
+            		if(space_ptr != NULL) {
+            			 *space_ptr++ = '\0';
+            		}
+            	    }
+            	    strcpy(temp, start_ptr);
+            	    crypto_key[inx] = strtol(temp, &ptr, 16);
+            	    printf("%d ", crypto_key[inx]);
+	            inx++;
+        	    start_ptr = space_ptr;
+	        }
+  		if(inx > 16) {
+  			fprintf(stderr, "Read too many bytes %d\n", inx);
+  			exit(0);
+  		}	
+	}	
+	fclose(fp);
+	encryption_key_read = 1;
+    }
     //FCS truncation, if present
     if(descriptor->fcs){
         len = header->caplen == header->len ? header->caplen - 2 : header->caplen;
@@ -810,15 +870,21 @@ interface_packet_handler(u_char * param, const struct pcap_pkthdr *header, const
     }
 
     if(len > 3) {
+#if DEBUG
       printf("*************************************************************\n");
       ww_dump_bytes((uint8_t*)pkt_data_802_15_4, len);
+#endif
       len = parse802154_decrypt((uint8_t*)pkt_data_802_15_4, len);
       if(len == -1) {
+#if DEBUG
           printf("Could not decrypt dropping\n");
+#endif
           return;
       }
+#if DEBUG
       ww_dump_bytes((uint8_t*)pkt_data_802_15_4, len);
       printf("*************************************************************\n");
+#endif
     }
 
     interfacemgr_process_packet(descriptor, pkt_data_802_15_4, len, header->ts);
